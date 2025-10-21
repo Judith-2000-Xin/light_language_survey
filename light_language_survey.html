@@ -1,0 +1,579 @@
+<!DOCTYPE html> 
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>光語言互動式學習檯燈—主觀感受問卷</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root{ --bg:#0b0d10; --text:#e6edf3; --muted:#a1a7b3; --primary:#6aa6ff; --card:#0f141a; --border:#243141; }
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--text)}
+  .card{background:var(--card); border:1px solid var(--border); border-radius:1rem}
+  .btn{padding:.6rem 1rem; border-radius:.75rem; border:1px solid var(--border)}
+  .btn-primary{background:var(--primary)}
+  .btn:disabled{opacity:.5; cursor:not-allowed}
+
+  /* == 7 點量表（標籤緊貼 1 / 7，整列置中） == */
+  .likert7{
+    display:grid;
+    grid-template-columns:max-content repeat(7,44px) max-content; /* 左右吃自身寬度 */
+    align-items:center;
+    justify-content:center; /* 整列置中 */
+    column-gap:.35rem;       /* 桿距縮小讓更靠近 */
+    row-gap:.6rem;
+    user-select:none;
+  }
+  .likert7 .label{
+    font-size:.87rem; color:var(--muted); white-space:nowrap; line-height:1;
+  }
+  .likert7 .label:first-child{ justify-self:end; }   /* 靠近 1 */
+  .likert7 .label:last-child{ justify-self:start; }  /* 靠近 7 */
+  .likert7 .cell{ display:flex; flex-direction:column; align-items:center; gap:.25rem; }
+  .likert7 input[type="radio"]{
+    appearance:none; -webkit-appearance:none; -moz-appearance:none;
+    width:28px; height:28px; border-radius:.6rem;
+    border:1px solid var(--border); background:var(--card); cursor:pointer;
+  }
+  .likert7 input[type="radio"]:hover{ outline:2px solid rgba(106,166,255,.35) }
+  .likert7 input[type="radio"]:focus{ outline:3px solid rgba(106,166,255,.55) }
+  .likert7 input[type="radio"]:checked{ outline:3px solid var(--primary); background:rgba(106,166,255,.18) }
+  .likert7 .num{ font-size:.75rem; color:var(--muted); line-height:1; }
+
+  /* ===== 情境區 ===== */
+  .scene-wrap{
+    position:relative; width:100%; max-width:1100px; margin:0 auto;
+    border-radius:1rem; overflow:hidden; box-shadow:0 10px 30px rgba(0,0,0,.35);
+    aspect-ratio: 16/9;                /* 固定比例，避免裝置不同導致變形 */
+    background:#0c1218;                /* 圖片未載入時的底色 */
+  }
+  .scene-img{ width:100%; height:100%; display:block; object-fit:cover; }
+  canvas#lightCanvas{
+    position:absolute; left:0; top:0; width:100%; height:100%;
+    pointer-events:none; mix-blend-mode:screen
+  }
+
+  .dot{width:.65rem;height:.65rem;border-radius:999px;background:#223046;margin:0 .25rem}
+  .dot.active{background:var(--primary)}
+  .select-light{color:#111;background:#fff}
+  .select-light option{color:#111;background:#fff}
+
+  /* ===== RWD：小螢幕優化 ===== */
+  @media (max-width: 768px){
+    .card{ padding:1rem; }
+    .likert7{
+      grid-template-columns:max-content repeat(7,32px) max-content;
+      column-gap:.25rem;
+    }
+    .likert7 input[type="radio"]{ width:22px; height:22px; border-radius:.5rem; }
+    .likert7 .num{ font-size:.7rem; }
+    .likert7 .label{ font-size:.8rem; }
+  }
+  @media (max-width: 480px){
+    .likert7{
+      grid-template-columns:max-content repeat(7,26px) max-content;
+      column-gap:.2rem;
+    }
+    .likert7 .label{ font-size:.75rem; }
+  }
+</style>
+</head>
+<body class="min-h-screen">
+<main class="max-w-5xl mx-auto p-4 md:p-8">
+  <header class="mb-6 md:mb-10">
+    <h1 class="text-2xl md:text-3xl font-semibold">光語言互動式學習檯燈—主觀感受問卷</h1>
+    <p class="text-sm text-[color:var(--muted)] mt-2">模擬光源以 9802K / 1816K / 3331K 三基點比例混光，動畫持續循環。</p>
+  </header>
+  <section id="app"></section>
+</main>
+
+<script>
+/*** === 貼上你的 Apps Script Web App URL（/exec） === ***/
+const GAS_URL = "https://script.google.com/macros/s/AKfycbzR2Jy492b_ArxDsEUIweH5avvOoe6PZoSL3xwbmDMLtH978reggqW5hS6AyCZQTXZL/exec";
+
+/*** ---------- 基礎設定 ---------- ***/
+/* 重要：把實體圖片檔名改成沒有空白的 lamp_simulate_screen.png */
+const SCENE_SRC = "lamp_simulate_screen.png";
+
+function cctToRGB(cctK){
+  let t=cctK/100, r,g,b;
+  if(t<=66) r=255; else{ r=t-60; r=329.698727446*Math.pow(r,-0.1332047592); r=Math.min(255,Math.max(0,r)); }
+  if(t<=66){ g=99.4708025861*Math.log(t)-161.1195681661; g=Math.min(255,Math.max(0,g)); }
+  else { g=t-60; g=288.1221695283*Math.pow(g,-0.0755148492); g=Math.min(255,Math.max(0,g)); }
+  if(t>=66) b=255; else if(t<=19) b=0;
+  else { b=138.5177312231*Math.log(t-10)-305.0447927307; b=Math.min(255,Math.max(0,b)); }
+  return [r|0,g|0,b|0];
+}
+function mixByAnchors(w){
+  const anchors=[9802,1816,3331], ws=[w.k9802||0,w.k1816||0,w.k3331||0];
+  const sum=ws.reduce((a,b)=>a+b,0)||1, n=ws.map(v=>v/sum), cols=anchors.map(c=>cctToRGB(c));
+  let r=0,g=0,b=0; for(let i=0;i<3;i++){ r+=n[i]*cols[i][0]; g+=n[i]*cols[i][1]; b+=n[i]*cols[i][2]; }
+  return [r,g,b];
+}
+const rgb = (arr,a=1)=>`rgba(${arr[0]},${arr[1]},${arr[2]},${a})`;
+
+/*** ---------- 模式 ---------- ***/
+const MODES = [
+  {quad:1,key:"Q1M1",title:"第一象限：維持專心—穩定光（深度學習）",
+   anim:{type:"steady", mix:{k9802:100,k1816:0,k3331:0}, bright:1.0},
+   statements:[
+    "此種光線讓我感到穩定並能維持專注。",
+    "當光線保持穩定時，我的注意力較不易被干擾。",
+    "此光線讓我能持續投入學習或工作任務。",
+    "穩定的光線讓我感覺有活力且不緊張。",
+    "此光線不會造成壓力或刺眼不適。"
+    ]
+  },
+  {quad:1,key:"Q1M2",title:"第一象限：維持專心—穩定光（高效工作）",
+   anim:{type:"steady", mix:{k9802:100,k1816:7,k3331:16}, bright:1.0},
+   statements:[
+    "此種光線讓我感到穩定並能維持專注。",
+    "當光線保持穩定時，我的注意力較不易被干擾。",
+    "此光線讓我能持續投入學習或工作任務。",
+    "穩定的光線讓我感覺有活力且不緊張。",
+    "此光線不會造成壓力或刺眼不適。"
+    ]
+  },
+  {quad:1,key:"Q1M3",title:"第一象限：維持專心—穩定光（日常事務）",
+   anim:{type:"steady", mix:{k9802:100,k1816:0,k3331:72}, bright:0.95},
+   statements:[
+    "此種光線讓我感到穩定並能維持專注。",
+    "當光線保持穩定時，我的注意力較不易被干擾。",
+    "此光線讓我能持續投入學習或工作任務。",
+    "穩定的光線讓我感覺有活力且不緊張。",
+    "此光線不會造成壓力或刺眼不適。"
+    ]
+  },
+
+  {quad:2,key:"Q2M1",title:"第二象限：重新聚焦—色溫引導（3500K↔5000K）",
+   anim:{type:"cctSweep",duration:6000,
+     a:{mix:{k9802:27,k1816:52,k3331:100},bright:0.9},
+     b:{mix:{k9802:97,k1816:15,k3331:100},bright:1.0}},
+   statements:[
+    "當光線產生短暫變化時，我會被提醒並重新回到任務上。",
+    "光線的色溫輕微變化會讓我感覺注意力被喚醒。",
+    "此光線的節奏變化不令人煩躁，反而幫助我重回專注。",
+    "我覺得此光線變化能提醒我「該回到工作狀態」。",
+    "此光線的輕微變化使我覺得「被輕輕喚醒」。"
+    ]
+  },
+  {quad:2,key:"Q2M2",title:"第二象限：重新聚焦—溫和脈衝（4500K）",
+   anim:{type:"pulse",mix:{k9802:68,k1816:20,k3331:100},min:0.75,max:1.05,period:2600},
+   statements:[
+    "當光線產生短暫變化時，我會被提醒並重新回到任務上。",
+    "光線的色溫輕微變化會讓我感覺注意力被喚醒。",
+    "此光線的節奏變化不令人煩躁，反而幫助我重回專注。",
+    "我覺得此光線變化能提醒我「該回到工作狀態」。",
+    "此光線的輕微變化使我覺得「被輕輕喚醒」。"
+    ]
+  },
+  {quad:2,key:"Q2M3",title:"第二象限：重新聚焦—光束聚焦（6000K）",
+   anim:{type:"spot",mix:{k9802:100,k1816:0,k3331:60},bright:1.0},
+   statements:[
+    "當光線產生短暫變化時，我會被提醒並重新回到任務上。",
+    "光線的色溫輕微變化會讓我感覺注意力被喚醒。",
+    "此光線的節奏變化不令人煩躁，反而幫助我重回專注。",
+    "我覺得此光線變化能提醒我「該回到工作狀態」。",
+    "此光線的輕微變化使我覺得「被輕輕喚醒」。"
+    ]
+  },
+
+  {quad:3,key:"Q3M1",title:"第三象限：強制恢復—氛圍轉換（3600K→1900K）",
+   anim:{type:"cctSweep",duration:7000,
+     a:{mix:{k9802:30,k1816:46,k3331:100},bright:0.85},
+     b:{mix:{k9802:2,k1816:100,k3331:0},bright:0.8}},
+   statements:[
+    "當光線轉為溫暖柔和時，我感覺被安撫。",
+    "這樣的光線讓我想結束目前的工作或任務。",
+    "暖色光的漸變讓我感到放鬆與安全。",
+    "這種光線幫助我轉換心情，進入休息狀態。",
+    "光線變化讓我覺得環境進入「結束」或「休息」的氛圍。"
+    ]
+  },
+  {quad:3,key:"Q3M2",title:"第三象限：強制恢復—溫柔強制（3200K→熄燈）",
+   anim:{type:"fadeOff",mix:{k9802:20,k1816:81,k3331:100},duration:8000,hold:0.35},
+   statements:[
+    "當光線轉為溫暖柔和時，我感覺被安撫。",
+    "這樣的光線讓我想結束目前的工作或任務。",
+    "暖色光的漸變讓我感到放鬆與安全。",
+    "這種光線幫助我轉換心情，進入休息狀態。",
+    "光線變化讓我覺得環境進入「結束」或「休息」的氛圍。"
+    ]
+  },
+  {quad:3,key:"Q3M3",title:"第三象限：強制恢復—晚安序列（1900K→熄燈）",
+   anim:{type:"fadeOff",mix:{k9802:2,k1816:100,k3331:0},duration:8000,hold:0.35},
+   statements:[
+    "當光線轉為溫暖柔和時，我感覺被安撫。",
+    "這樣的光線讓我想結束目前的工作或任務。",
+    "暖色光的漸變讓我感到放鬆與安全。",
+    "這種光線幫助我轉換心情，進入休息狀態。",
+    "光線變化讓我覺得環境進入「結束」或「休息」的氛圍。"
+    ]
+  },
+
+  {quad:4,key:"Q4M1",title:"第四象限：鼓勵休息—日落提醒（5000K→3000K）",
+   anim:{type:"cctSweep",duration:7000,
+     a:{mix:{k9802:97,k1816:15,k3331:100},bright:0.95},
+     b:{mix:{k9802:14,k1816:100,k3331:100},bright:0.85}},
+   statements:[
+    "當光線逐漸變暗時，我自然感到需要休息。",
+    "光線的緩慢變化讓我覺得心情放鬆。",
+    "此光線會讓我想暫時離開工作或改變姿勢。",
+    "我覺得光線的節奏變化像是在提醒我該休息。",
+    "此種光線讓我覺得溫暖、舒適且不緊張。"
+    ]
+  },
+  {quad:4,key:"Q4M2",title:"第四象限：鼓勵休息—呼吸光暈（2700K）",
+   anim:{type:"pulse",mix:{k9802:4,k1816:10,k3331:63},min:0.65,max:0.95,period:3400},
+   statements:[
+    "當光線逐漸變暗時，我自然感到需要休息。",
+    "光線的緩慢變化讓我覺得心情放鬆。",
+    "此光線會讓我想暫時離開工作或改變姿勢。",
+    "我覺得光線的節奏變化像是在提醒我該休息。",
+    "此種光線讓我覺得溫暖、舒適且不緊張。"
+    ]
+  },
+  {quad:4,key:"Q4M3",title:"第四象限：鼓勵休息—番茄時鐘（2800K 閃 5 次→未休息自轉 6800K）",
+   anim:{ type:"pomodoro",
+     warm:{ mix:{k9802:6,k1816:100,k3331:77}, bright:0.88 },
+     cool:{ mix:{k9802:100,k1816:0,k3331:30}, bright:0.95 },
+     blinkCount:5, blinkOnMs:350, blinkOffMs:250, restWindowMs:15000, loop:true },
+   statements:[
+    "當光線逐漸變暗時，我自然感到需要休息。",
+    "光線的緩慢變化讓我覺得心情放鬆。",
+    "此光線會讓我想暫時離開工作或改變姿勢。",
+    "我覺得光線的節奏變化像是在提醒我該休息。",
+    "此種光線讓我覺得溫暖、舒適且不緊張。"
+    ]
+  },
+];
+
+/*** ---------- App 狀態 ---------- ***/
+const state = { step:0, consent:false, basic:{age:"",lampFreq:"",gender:"",device:""}, answers:{} };
+const app = document.getElementById("app");
+const mount = html => app.innerHTML = html;
+const progress = i => {
+  let dots=""; for(let k=0;k<MODES.length;k++) dots += `<div class="dot ${k===i?'active':''}"></div>`;
+  return `<div class="flex items-center justify-center mt-4">${dots}</div>`;
+};
+
+/*** ---------- 頁面渲染 ---------- ***/
+renderConsent();
+
+function renderConsent(){
+  mount(`
+    <div class="card p-6 md:p-8">
+      <h2 class="text-xl font-semibold mb-4">研究說明與同意</h2>
+      <div class="prose prose-invert max-w-none">
+        <p>您好，感謝您協助本研究之問卷調查。本研究由 國立臺灣科技大學 色彩與照明科技研究所 所進行，旨在探討不同年齡層對光語言（Light Language）之主觀感受，以了解人們在不同燈光變化下的心理與感知反應。「光語言」指的是以燈光的變化傳達特定情緒與提醒狀態的互動方式。本研究希望透過問卷結果，發展出能依使用者狀態動態調整的光語言互動式學習檯燈，以幫助使用者在長時間學習或工作中維持專注、放鬆並降低疲勞。問卷採匿名填答，資料僅供學術研究分析使用，填答約需 5～8 分鐘，請依您的真實感受作答，沒有對錯之分。感謝您的參與，您寶貴的意見將有助於推進人本照明與智慧光互動研究。</p>
+      </div>
+      <label class="mt-6 flex items-center gap-3">
+        <input id="consentChk" type="checkbox" class="w-5 h-5">
+        <span>我已閱讀並同意上述說明，願意匿名參與本研究。</span>
+      </label>
+      <div class="mt-6 flex justify-end">
+        <button id="consentNext" class="btn btn-primary" disabled>下一頁</button>
+      </div>
+    </div>
+  `);
+  document.getElementById("consentChk").addEventListener("change", e=>{
+    state.consent = !!e.target.checked;
+    document.getElementById("consentNext").disabled = !state.consent;
+  });
+  document.getElementById("consentNext").addEventListener("click", ()=>{ state.step=1; renderBasic(); });
+}
+
+function renderBasic(){
+  mount(`
+    <div class="card p-6 md:p-8">
+      <h2 class="text-xl font-semibold mb-4">基本資料（僅供統計，皆匿名處理）</h2>
+      <div class="grid md:grid-cols-2 gap-4">
+        <label class="block">
+          <div class="mb-1 text-sm text-[color:var(--muted)]">年齡</div>
+          <select id="age" class="select-light w-full border rounded-lg p-2.5">
+            <option value="" selected>請選擇</option>
+            <option>&lt;13</option><option>13–18</option><option>19–25</option>
+            <option>26–35</option><option>36–45</option><option>46–60</option><option>&gt;60</option>
+          </select>
+        </label>
+        <label class="block">
+          <div class="mb-1 text-sm text-[color:var(--muted)]">平時使用檯燈之頻率</div>
+          <select id="lampFreq" class="select-light w-full border rounded-lg p-2.5">
+            <option value="" selected>請選擇</option>
+            <option>幾乎每天</option><option>每週數次</option><option>偶爾</option><option>很少/幾乎不用</option>
+          </select>
+        </label>
+        <label class="block">
+          <div class="mb-1 text-sm text-[color:var(--muted)]">性別</div>
+          <select id="gender" class="select-light w-full border rounded-lg p-2.5">
+            <option value="" selected>請選擇</option>
+            <option>男性</option><option>女性</option><option>非二元/不便透露</option>
+          </select>
+        </label>
+        <label class="block">
+          <div class="mb-1 text-sm text-[color:var(--muted)]">作答裝置</div>
+          <select id="device" class="select-light w-full border rounded-lg p-2.5">
+            <option value="" selected>請選擇</option>
+            <option>桌上型電腦</option><option>筆記型電腦</option><option>平板</option><option>手機</option>
+          </select>
+        </label>
+      </div>
+      <div class="mt-6 flex justify-end">
+        <button id="basicNext" class="btn btn-primary" disabled>開始模擬</button>
+      </div>
+    </div>
+  `);
+  const ids=["age","lampFreq","gender","device"];
+  ids.forEach(id=>document.getElementById(id).addEventListener("change", validate));
+  function validate(){
+    state.basic = Object.fromEntries(ids.map(id=>[id,document.getElementById(id).value]));
+    document.getElementById("basicNext").disabled = !ids.every(id=>document.getElementById(id).value);
+  }
+  document.getElementById("basicNext").addEventListener("click", ()=>renderMode(0));
+}
+
+/*** ---------- 畫面 & 動畫 ---------- ***/
+let cvs, ctx, W, H, deskY;
+function renderMode(idx){
+  const m = MODES[idx];
+  if(!state.answers[m.key]) state.answers[m.key] = Array(m.statements.length).fill(null);
+
+  // 7 點量表列
+  const likertRows = m.statements.map((s,i)=>{
+    const name = `likert-${m.key}-${i}`;
+    const current = state.answers[m.key][i];
+    const cells = Array.from({length:7}, (_,k)=>{
+      const v = k+1;
+      return `
+        <label class="cell" aria-label="${v}">
+          <input type="radio" name="${name}" value="${v}" ${current===v?'checked':''}>
+          <span class="num">${v}</span>
+        </label>`;
+    }).join("");
+    return `
+      <div class="mb-5">
+        <div class="mb-2 text-center">${s}</div>
+        <div class="likert7" data-row="${i}" role="radiogroup" aria-label="7 點量表">
+          <div class="label">非常不同意</div>
+          ${cells}
+          <div class="label text-right">非常同意</div>
+        </div>
+      </div>`;
+  }).join("");
+
+  mount(`
+    <div class="card p-4 md:p-6">
+      <div class="flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <div class="text-sm text-[color:var(--muted)]">光互動情境模擬（${m.quad} / 4）</div>
+          <h2 class="text-xl font-semibold mt-1">${m.title}</h2>
+        </div>
+        <div class="text-sm text-[color:var(--muted)]">請先觀看動畫（持續循環）再作答</div>
+      </div>
+
+      <div class="scene-wrap mt-4" id="sceneWrap">
+        <img id="sceneImg" class="scene-img" src="${SCENE_SRC}" alt="桌面情境圖"/>
+        <canvas id="lightCanvas"></canvas>
+      </div>
+
+      ${progress(idx)}
+
+      <div class="mt-6">
+        <div class="text-sm text-[color:var(--muted)] mb-2">
+          本問卷採 7 點量表（1=非常不同意，7=非常同意），點選分數以作答。
+        </div>
+        ${likertRows}
+      </div>
+
+      <div class="mt-6 flex justify-between">
+        <button id="prevBtn" class="btn" ${idx===0?'disabled':''}>上一頁</button>
+        <button id="nextBtn" class="btn btn-primary" disabled>下一頁</button>
+      </div>
+    </div>
+  `);
+
+  // 監聽選取
+  document.querySelectorAll('.likert7 input[type="radio"]').forEach(inp=>{
+    inp.addEventListener('change', e=>{
+      const row = +e.target.closest('.likert7').dataset.row;
+      state.answers[m.key][row] = +e.target.value;
+      checkReady();
+    });
+  });
+  function checkReady(){ document.getElementById("nextBtn").disabled = !state.answers[m.key].every(v=>v!=null); }
+  checkReady();
+
+  document.getElementById("prevBtn").addEventListener("click", ()=> idx>0?renderMode(idx-1):renderBasic());
+  document.getElementById("nextBtn").addEventListener("click", ()=> idx<MODES.length-1?renderMode(idx+1):renderFinish());
+
+  // 圖片載入後啟動光效（行動裝置上需強化等待條件）
+  const img = document.getElementById("sceneImg");
+  function safeStart(){
+    const wrap = document.getElementById("sceneWrap");
+    const r = wrap.getBoundingClientRect();
+    if(r.width>0 && r.height>0 && img.naturalWidth>0){ startLighting(m.anim); }
+    else setTimeout(safeStart, 100);
+  }
+  if(img.complete && img.naturalWidth>0) safeStart();
+  else img.addEventListener("load", safeStart, {once:true});
+}
+
+function startLighting(A){
+  const wrap = document.getElementById("sceneWrap");
+  cvs = document.getElementById("lightCanvas");
+  ctx = cvs.getContext("2d");
+
+  // 保證畫布跟著容器縮放（行動裝置）
+  cvs.style.width = "100%";
+  cvs.style.height = "100%";
+
+  function resize(){
+    const r=wrap.getBoundingClientRect(), dpr=window.devicePixelRatio||1;
+    cvs.width = Math.max(1, Math.round(r.width*dpr));
+    cvs.height = Math.max(1, Math.round(r.height*dpr));
+    W=cvs.width; H=cvs.height; deskY = H*0.695;
+  }
+  resize(); 
+  addEventListener("resize", resize);
+  addEventListener("orientationchange", ()=>setTimeout(resize, 150));
+  if(!W||!H){ requestAnimationFrame(()=>startLighting(A)); return; }
+
+  let pom = null;
+  if(A.type==="pomodoro"){ pom = { phase:"blink", blinkLeft:A.blinkCount||5, tStart:performance.now() }; }
+
+  let t0=performance.now(), theta=0;
+  requestAnimationFrame(function draw(now){
+    const t=now-t0;
+    ctx.clearRect(0,0,W,H);
+
+    // 只在桌面/書上打光
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, deskY - H*0.0005, W, H - (deskY - H*0.0005)); ctx.clip();
+
+    const bx = W*0.45 + Math.sin(theta)*W*0.01;
+    const by = H*0.90 + Math.cos(theta*0.8)*H*0.005 - 50;
+    const baseR = Math.min(W,H)*0.18;
+
+    let col=[255,255,255], br=1;
+
+    if(A.type==="steady"){
+      col=mixByAnchors(A.mix); br=A.bright??1;
+      if(A.breath){ br*=0.9+0.05*Math.sin(t/4000*2*Math.PI); }
+    } else if(A.type==="pulse"){
+      col=mixByAnchors(A.mix);
+      const s=(Math.sin((t%(A.period||2600))/(A.period||2600)*2*Math.PI)+1)/2;
+      br=A.min+(A.max-A.min)*s;
+    } else if(A.type==="cctSweep"){
+      const p=(t%(A.duration||6000))/(A.duration||6000);
+      const mix={
+        k9802:A.a.mix.k9802+(A.b.mix.k9802-A.a.mix.k9802)*p,
+        k1816:A.a.mix.k1816+(A.b.mix.k1816-A.a.mix.k1816)*p,
+        k3331:A.a.mix.k3331+(A.b.mix.k3331-A.a.mix.k3331)*p
+      };
+      col=mixByAnchors(mix); br=A.a.bright+(A.b.bright-A.a.bright)*p;
+    } else if(A.type==="fadeOff"){
+      const dur=A.duration||8000, offStart=A.hold??0.6;
+      const p=(t%dur)/dur;
+      br = p<offStart ? (1 - (p/offStart)) : 0;
+      col=mixByAnchors(A.mix);
+    } else if(A.type==="spot"){
+      col=mixByAnchors(A.mix); br=A.bright??1; theta += 0.015;
+    } else if(A.type==="pomodoro"){
+      const nowMs = performance.now();
+      if(pom.phase==="blink"){
+        const on = Math.floor((nowMs - pom.tStart) / (A.blinkOnMs + A.blinkOffMs)) % 2 === 0;
+        if(on){ col = mixByAnchors(A.warm.mix); br = A.warm.bright; } else { col = mixByAnchors(A.warm.mix); br = 0.15; }
+        const elapsed = nowMs - pom.tStart;
+        if(elapsed >= (A.blinkOnMs + A.blinkOffMs)){
+          pom.tStart = nowMs; pom.blinkLeft--;
+          if(pom.blinkLeft<=0){ pom.phase="cool"; pom.tStart = nowMs; }
+        }
+      }else{
+        col = mixByAnchors(A.cool.mix); br = A.cool.bright;
+        if(nowMs - pom.tStart >= (A.restWindowMs||300000)){
+          if(A.loop){ pom.phase="blink"; pom.blinkLeft=A.blinkCount||5; pom.tStart=nowMs; }
+        }
+      }
+    }
+
+    /* 桌面柔邊光暈 */
+    drawDeskEllipse(bx,by,baseR*1.5,1.0,col,br);
+    ctx.restore();
+
+    /* 牆面漫射 */
+    const lampWallX = W * 0.25, lampWallY = H * 0.50;
+    const R = Math.hypot(W,H) * 1.5;
+    const g = ctx.createRadialGradient(lampWallX, lampWallY*0.9, 0, lampWallX, lampWallY, R);
+    g.addColorStop(0.00, rgb(col, 0.10 * br));
+    g.addColorStop(0.50, rgb(col, 0.05 * br));
+    g.addColorStop(1.00, "rgba(0,0,0,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0,0,W,deskY);
+
+    requestAnimationFrame(draw);
+  });
+}
+
+function drawDeskEllipse(cx,cy,R,ell,col,bright){
+  const INNER = 0.08, OUTER = 1.55;
+  ctx.save();
+  ctx.translate(cx,cy);
+  ctx.scale(1.5,1.0);
+  const g = ctx.createRadialGradient(0,0,R*INNER, 0,0,R*OUTER);
+  g.addColorStop(0.00, rgb(col, 0.65*bright));
+  g.addColorStop(0.45, rgb(col, 0.16*bright));
+  g.addColorStop(0.85, rgb(col, 0.04*bright));
+  g.addColorStop(1.00, "rgba(0,0,0,0)");
+  ctx.fillStyle=g;
+  ctx.beginPath(); ctx.arc(0,0,R*OUTER,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+/*** ---------- 完成頁：只顯示致謝文字；背景上傳 ---------- ***/
+function renderFinish(){
+  // 要上傳的內容
+  const payload = {
+    submittedAt: new Date().toISOString(),
+    consent: state.consent,
+    basic: state.basic,
+    answers: state.answers,
+    modes: MODES.map(m=>({key:m.key,title:m.title,quad:m.quad})),
+    _meta: { ua: navigator.userAgent }
+  };
+
+  // 先顯示固定致謝文字（使用者只看到這個）
+  mount(`
+    <div class="card p-6 md:p-8">
+      <h2 class="text-xl font-semibold mb-2">已完成，感謝您的填答！</h2>
+      <div class="prose prose-invert max-w-none mt-4 leading-relaxed">
+        <p>感謝您撥冗參與本研究之問卷填答。</p>
+        <p>您的意見對本研究探討「光語言互動與學習監督照明設計」具有重要參考價值。</p>
+        <p>所有資料僅供學術研究分析之用，將以匿名方式處理與呈現。</p>
+        <p>再次感謝您的協助與支持。</p>
+      </div>
+    </div>
+  `);
+
+  // === 背景上傳：text/plain 以避免 CORS 預檢 ===
+  try{
+    const bodyText = JSON.stringify(payload);
+    // 優先 sendBeacon（不觸發預檢）；不支援時用 fetch(text/plain)
+    let sent = false;
+    if (navigator.sendBeacon) {
+      const ok = navigator.sendBeacon(GAS_URL, new Blob([bodyText], {type:'text/plain'}));
+      sent = ok;
+    }
+    if (!sent) {
+      fetch(GAS_URL, {
+        method: 'POST',
+        headers: {'Content-Type':'text/plain;charset=utf-8'},
+        body: bodyText,
+        keepalive: true,
+        mode: 'cors'
+      }).catch(()=>{ /* 靜默失敗，不影響 UI */ });
+    }
+  }catch(e){ /* 靜默失敗 */ }
+}
+</script>
+</body>
+</html>
